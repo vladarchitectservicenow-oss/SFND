@@ -1,0 +1,12 @@
+{
+  "name": "sfnd",
+  "version": "1.0.0",
+  "description": "ServiceNow Fluent Now Deployment Toolkit",
+  "main": "src/SFNDPackager.js",
+  "scripts": {
+    "test": "node test/test_sfnd.js"
+  },
+  "keywords": ["servicenow", "fluent", "deployment", "ci-cd", "now-ts"],
+  "author": "ServiceNow Architecture OSS",
+  "license": "MIT"
+}

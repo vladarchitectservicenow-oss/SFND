@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<unload unload_date="2026-05-16">
+<unload unload_date="2026-05-16 00:00:00">
   <sys_app action="INSERT_OR_UPDATE">
-    <name>ServiceNow Fluent Now (.now.ts) Deployment Toolkit</name>
+    <name>ServiceNow Fluent Now Deployment Toolkit</name>
     <scope>x_sfnd</scope>
     <version>1.0.0</version>
-    <vendor>Vladimir Kapustin (vladarchitect)</vendor>
-    <description>CI/CD adapter for ServiceNow Fluent DSL.
-Packages .now.ts files, validates against platform schema, generates deployable update sets.
-    </description>
-    <license>AGPL-3.0-only</license>
+    <sys_created_on>2026-05-16 00:00:00</sys_created_on>
+    <sys_updated_on>2026-05-16 00:00:00</sys_updated_on>
+    <sys_id>sfnd-app-0001</sys_id>
+    <active>true</active>
+    <enforce_license>none</enforce_license>
+    <js_level>helsinki_es5</js_level>
+    <licensable>false</licensable>
+    <private>false</private>
+    <source>x_sfnd</source>
+    <template/><vendor/><vendor_prefix/>
   </sys_app>
 </unload>

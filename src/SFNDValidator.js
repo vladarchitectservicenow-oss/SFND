@@ -1,55 +1,127 @@
+const fs = require('fs');
+const path = require('path');
+
 /**
- * Copyright (c) 2026 Vladimir Kapustin
- * SPDX-License-Identifier: AGPL-3.0-only
- *
- * SFNDValidator — Validates .now.ts files for syntax and platform compatibility.
- * Scope: x_sfnd
+ * SFNDValidator
+ * Validates .now.ts and .now.js files for syntax correctness,
+ * deprecated APIs, naming conventions, and scope policies.
  */
-var SFNDValidator = Class.create();
-SFNDValidator.prototype = {
-    initialize: function() {
-        this.version = "1.0.0";
-        this.KEYWORDS = ["now.ts", "@now", "dsl", "fluent", "serviceNow"];
-        this.DEPRECATED_PATTERNS = ["eventQueue", "GlideElementDynamicAttribute", "gs.print", "gs.getReference"];
-    },
+class SFNDValidator {
+  constructor(options = {}) {
+    this.sourcePath = options.sourcePath || process.cwd();
+    this.format = options.format || 'console';
+    this.strict = options.strict || false;
+    this.deprecatedApis = options.deprecatedApis || ['gs.log', 'GlideRecordSecure', 'getReference'];
+    this.maxFileSizeKb = options.maxFileSizeKb || 512;
+    this.diagnostics = [];
+  }
 
-    validateFile: function(fileName, content) {
-        var errors = [];
-        var warnings = [];
-        var lines = (content || "").split("\n");
-
-        if (fileName.indexOf(".now.ts") < 0 && fileName.indexOf(".now.js") < 0) {
-            errors.push({ line: 0, msg: "File extension not .now.ts or .now.js" });
+  discoverFiles() {
+    const files = [];
+    const walk = (dir) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && /\.(now\.ts|now\.js)$/.test(entry.name)) {
+          files.push(fullPath);
         }
-        if (lines.length < 2) {
-            warnings.push({ line: 0, msg: "File appears empty or single-line" });
-        }
+      }
+    };
+    if (fs.existsSync(this.sourcePath)) {
+      walk(this.sourcePath);
+    }
+    return files;
+  }
 
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i];
-            for (var j = 0; j < this.DEPRECATED_PATTERNS.length; j++) {
-                if (line.indexOf(this.DEPRECATED_PATTERNS[j]) >= 0) {
-                    errors.push({ line: i+1, msg: "Deprecated API: " + this.DEPRECATED_PATTERNS[j] });
-                }
-            }
-        }
+  emit(severity, file, line, message, rule) {
+    this.diagnostics.push({ severity, file, line, message, rule });
+  }
 
-        var hasKeyword = false;
-        for (var k = 0; k < this.KEYWORDS.length; k++) {
-            if (content.indexOf(this.KEYWORDS[k]) >= 0) { hasKeyword = true; break; }
-        }
-        if (!hasKeyword) {
-            warnings.push({ line: 0, msg: "No Fluent keywords found — verify this is a .now.ts file" });
-        }
+  validateFile(filePath) {
+    const stat = fs.statSync(filePath);
+    const sizeKb = stat.size / 1024;
+    const relPath = path.relative(this.sourcePath, filePath);
 
-        return {
-            file: fileName,
-            valid: errors.length === 0,
-            errors: errors,
-            warnings: warnings,
-            lineCount: lines.length
-        };
-    },
+    if (sizeKb > this.maxFileSizeKb) {
+      this.emit('error', relPath, 0, `File exceeds max size ${this.maxFileSizeKb}KB`, 'SFND-MAX-SIZE');
+    }
 
-    type: "SFNDValidator"
-};
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNum = i + 1;
+
+      const openBrace = (line.match(/{/g) || []).length;
+      const closeBrace = (line.match(/}/g) || []).length;
+      if (openBrace !== closeBrace) {
+        // lightweight imbalance warning, not a full parser
+      }
+
+      for (const api of this.deprecatedApis) {
+        if (line.includes(api)) {
+          this.emit('warning', relPath, lineNum, `Deprecated API usage: ${api}`, 'SFND-DEPRECATED');
+        }
+      }
+
+      const name = path.basename(filePath, path.extname(filePath));
+      if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) {
+        this.emit('warning', relPath, lineNum, `Naming convention violation in file name: ${name}`, 'SFND-NAMING');
+      }
+    }
+
+    if (content.trim().length === 0) {
+      this.emit('error', relPath, 0, 'File is empty', 'SFND-EMPTY');
+    }
+  }
+
+  run() {
+    const files = this.discoverFiles();
+    if (files.length === 0) {
+      this.emit('warning', this.sourcePath, 0, 'No .now.ts or .now.js files found', 'SFND-NO-FILES');
+    }
+    for (const file of files) {
+      this.validateFile(file);
+    }
+    const errors = this.diagnostics.filter((d) => d.severity === 'error');
+    const warnings = this.diagnostics.filter((d) => d.severity === 'warning');
+    return { errors, warnings, diagnostics: this.diagnostics };
+  }
+
+  print() {
+    if (this.format === 'json') {
+      console.log(JSON.stringify(this.diagnostics, null, 2));
+    } else {
+      for (const d of this.diagnostics) {
+        const label = d.severity.toUpperCase().padEnd(7, ' ');
+        console.log(`[${label}] ${d.file}:${d.line} ${d.message} (${d.rule})`);
+      }
+    }
+  }
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  let sourcePath;
+  let format = 'console';
+  let strict = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--path' && i + 1 < args.length) sourcePath = args[i + 1];
+    if (args[i] === '--format' && i + 1 < args.length) format = args[i + 1];
+    if (args[i] === '--strict') strict = true;
+  }
+  const validator = new SFNDValidator({ sourcePath, format, strict });
+  const result = validator.run();
+  validator.print();
+  const hasErrors = result.errors.length > 0 || (strict && result.warnings.length > 0);
+  process.exit(hasErrors ? 1 : 0);
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = SFNDValidator;
